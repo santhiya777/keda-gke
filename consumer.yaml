@@ -1,0 +1,23 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: keda-demo
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: keda-demo
+  template:
+    metadata:
+      labels:
+        app: keda-demo
+    spec:
+      containers:
+      - name: consumer
+        image: keda-demo-local:1.0
+        imagePullPolicy: IfNotPresent
+        env:
+        - name: RABBITMQ_HOST
+          value: "rabbitmq"
+        - name: QUEUE_NAME
+          value: "keda-demo-queue"

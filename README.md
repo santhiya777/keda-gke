@@ -11,6 +11,34 @@ The purpose of this repository is to provide a reference implementation for even
 - `templates/`: Includes the Kubernetes manifest templates for deploying the application and configuring autoscaling with KEDA.
 - `generate-message.sh`: A small load generator that publishes a message to the Pub/Sub topic every second, used to trigger and observe autoscaling.
 
+## Architecture
+
+```mermaid
+flowchart LR
+    G["generate-message.sh<br/>(load generator)"] -->|publishes messages| T[("Pub/Sub Topic<br/>keda-demo-topic")]
+    T --> S[("Pub/Sub Subscription<br/>keda-demo-topic-subscription")]
+
+    subgraph GKE["GKE Cluster"]
+        direction TB
+        K["KEDA Operator"] -->|polls backlog size| S
+        K -->|updates| HPA["Horizontal Pod Autoscaler"]
+        SO["ScaledObject +<br/>TriggerAuthentication"] -.->|configures| K
+        HPA -->|scales 0 → N replicas| D["Deployment: keda-demo<br/>(consumer pods)"]
+        D -->|pulls & acks messages| S
+    end
+
+    WI["Workload Identity"] -.->|grants IAM access| K
+    WI -.->|grants IAM access| D
+```
+
+**How it flows:**
+1. `generate-message.sh` publishes a steady stream of messages to the Pub/Sub topic.
+2. Messages land in the subscription and sit there unacknowledged until a consumer pulls them.
+3. The KEDA operator (authenticating via Workload Identity through a `TriggerAuthentication` resource) polls the subscription's backlog size on the interval defined in the `ScaledObject`.
+4. KEDA feeds that metric to the Kubernetes HPA, which scales the `keda-demo` Deployment from 0 up to `maxReplicaCount` as the backlog grows.
+5. Consumer pods (also using Workload Identity) pull and acknowledge messages from the subscription.
+6. As the backlog drains, KEDA scales the Deployment back down to zero — no idle pods running when there's no work to do.
+
 ## Prerequisites
 
 - A GKE cluster with Workload Identity enabled
